@@ -2,6 +2,8 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import pandas as pd
 import numpy as np
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
 
 def load_file():
     file_path = filedialog.askopenfilename()  # Możesz wybrać dowolny plik dla testu
@@ -10,8 +12,8 @@ def load_file():
 
 def process_file(file_path):
     try:
-        # Wczytaj dane z Excela
-        df = pd.read_excel(file_path)
+        # Wczytaj dane z Excela, ustawiając odpowiedni wiersz jako nagłówek
+        df = pd.read_excel(file_path, header=1)  # Ustawienie header=1 na stałe
 
         # Wyświetl nagłówki kolumn, aby zweryfikować ich poprawność
         print("Columns in the file:", df.columns.tolist())
@@ -20,34 +22,65 @@ def process_file(file_path):
         print("Preview of the data:")
         print(df.head())
 
-        # Przykład: Filtruj dane na podstawie kolumny "Date" na jeden tydzień
+        # Przykład: Konwersja kolumny "Date" na format datetime
         if 'Date' not in df.columns:
             messagebox.showerror("Error", "Column 'Date' not found in the file.")
             return
 
-        df['Date'] = pd.to_datetime(df['Date'])
+        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        if df['Date'].isnull().any():
+            messagebox.showerror("Error", "Some dates could not be converted.")
+            print("Rows with conversion errors:")
+            print(df[df['Date'].isnull()])
+            return
+
+        # Filtruj dane na podstawie kolumny "Date" na jeden tydzień
         start_date = df['Date'].min()
         end_date = start_date + pd.Timedelta(days=6)
         weekly_data = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
 
         # Przykładowa logika przetwarzania danych
         def calculate_hours(group):
-            take_actions = group[group['Action'] == 'take']
-            accept_reject_actions = group[(group['Action'] == 'accept') | (group['Action'] == 'reject')]
             total_hours = 0
-            for index, take_action in take_actions.iterrows():
-                corresponding_actions = accept_reject_actions[accept_reject_actions['Xdeliverable'] == take_action['Xdeliverable']]
+            take_times = group[group['Action'] == 'take']
+            for index, take_action in take_times.iterrows():
+                corresponding_actions = group[(group['Xdeliverable'] == take_action['Xdeliverable']) & 
+                                              (group['Action'].isin(['accept', 'reject'])) &
+                                              (group['Date'] > take_action['Date'])]
                 if not corresponding_actions.empty:
                     accept_reject_time = corresponding_actions['Date'].iloc[0]
                     time_diff = accept_reject_time - take_action['Date']
-                    hours = np.ceil(time_diff.total_seconds() / 3600 / 0.25) * 0.25  # zaokrąglij w górę do 0.25 godziny
+                    # Oblicz czas w godzinach i zaokrąglij w górę do 0.25
+                    hours = np.ceil(time_diff.total_seconds() / 3600 / 0.25) * 0.25
+                    print(f"Calculated hours between {take_action['Date']} and {accept_reject_time}: {hours}")
                     total_hours += hours
             return total_hours
 
-        results = weekly_data.groupby(['Campaign name', 'Date']).apply(calculate_hours).reset_index(name='Hours')
+        # Grupowanie po kampanii i dacie, zsumowanie godzin
+        results = weekly_data.groupby(['Campaign name', weekly_data['Date'].dt.date]).apply(calculate_hours).reset_index(name='Hours')
+
+        # Sortowanie wyników po dacie
+        results = results.sort_values(by='Date')
 
         # Eksport wyników do nowego pliku Excel
-        results.to_excel('processed_data.xlsx', index=False)
+        output_file = 'processed_data.xlsx'
+        results.to_excel(output_file, index=False)
+        
+        # Kolorowanie wierszy naprzemiennie
+        wb = load_workbook(output_file)
+        ws = wb.active
+
+        # Definiowanie kolorów
+        fill_grey = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
+
+        current_date = None
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=3):
+            if row[1].value != current_date:
+                current_date = row[1].value
+                for cell in row:
+                    cell.fill = fill_grey if current_date.day % 2 == 0 else PatternFill()  # Zastosuj kolor na zmianę
+
+        wb.save(output_file)
         print("Plik przetworzony i zapisany jako 'processed_data.xlsx'.")
     except Exception as e:
         print(f"An error occurred: {e}")
