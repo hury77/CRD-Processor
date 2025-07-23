@@ -34,12 +34,7 @@ def process_file(file_path):
             print(df[df['Date'].isnull()])
             return
 
-        # Filtruj dane na podstawie kolumny "Date" na jeden tydzień
-        start_date = df['Date'].min()
-        end_date = start_date + pd.Timedelta(days=6)
-        weekly_data = df[(df['Date'] >= start_date) & (df['Date'] <= end_date)]
-
-        # Przykładowa logika przetwarzania danych
+        # Grupowanie po kampanii i dacie, zsumowanie godzin
         def calculate_hours(group):
             total_hours = 0
             take_times = group[group['Action'] == 'take']
@@ -54,16 +49,19 @@ def process_file(file_path):
                     hours = np.ceil(time_diff.total_seconds() / 3600 / 0.25) * 0.25
                     print(f"Calculated hours between {take_action['Date']} and {accept_reject_time}: {hours}")
                     total_hours += hours
-            return total_hours
+            # Ograniczanie godzin do 8 max
+            return min(total_hours, 8)
 
-        # Grupowanie po kampanii i dacie, zsumowanie godzin
-        results = weekly_data.groupby(['Campaign name', weekly_data['Date'].dt.date]).apply(calculate_hours).reset_index(name='Hours')
+        results = df.groupby(['Campaign name', df['Date'].dt.date]).apply(calculate_hours).reset_index(name='Hours')
 
         # Sortowanie wyników po dacie
         results = results.sort_values(by='Date')
 
-        # Eksport wyników do nowego pliku Excel
-        output_file = 'processed_data.xlsx'
+        # Wybór miejsca zapisu pliku wynikowego
+        output_file = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")])
+        if not output_file:
+            return  # Jeśli użytkownik anuluje wybór
+
         results.to_excel(output_file, index=False)
         
         # Kolorowanie wierszy naprzemiennie
@@ -77,11 +75,12 @@ def process_file(file_path):
         for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=3):
             if row[1].value != current_date:
                 current_date = row[1].value
-                for cell in row:
-                    cell.fill = fill_grey if current_date.day % 2 == 0 else PatternFill()  # Zastosuj kolor na zmianę
+                fill = fill_grey if current_date.weekday() % 2 == 0 else PatternFill()
+            for cell in row:
+                cell.fill = fill
 
         wb.save(output_file)
-        print("Plik przetworzony i zapisany jako 'processed_data.xlsx'.")
+        print(f"Plik przetworzony i zapisany jako '{output_file}'.")
     except Exception as e:
         print(f"An error occurred: {e}")
 
