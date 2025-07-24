@@ -4,6 +4,7 @@ import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill, numbers
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
 def load_file():
     file_path = filedialog.askopenfilename()  # Możesz wybrać dowolny plik dla testu
@@ -12,6 +13,12 @@ def load_file():
 
 def process_file(file_path):
     try:
+        # Lista marek z koncernu Stellantis
+        stellantis_brands = [
+            'Peugeot', 'Citroën', 'Opel', 'Vauxhall', 'Fiat', 'Chrysler', 'Dodge', 
+            'Jeep', 'Ram', 'Maserati', 'Alfa Romeo', 'Lancia', 'Abarth'
+        ]
+
         # Wczytaj dane z Excela, ustawiając odpowiedni wiersz jako nagłówek
         df = pd.read_excel(file_path, header=1)  # Ustawienie header=1 na stałe
 
@@ -34,6 +41,15 @@ def process_file(file_path):
             print(df[df['Date'].isnull()])
             return
 
+        # Dodanie kolumny "Legal entity"
+        def determine_legal_entity(campaign_name):
+            for brand in stellantis_brands:
+                if brand.lower() in campaign_name.lower():
+                    return 'PL21'
+            return 'PL20'
+
+        df['Legal entity'] = df['Campaign name'].apply(determine_legal_entity)
+
         # Grupowanie po kampanii i dacie, zsumowanie godzin
         def calculate_hours(group):
             total_hours = 0
@@ -53,7 +69,7 @@ def process_file(file_path):
             # Ograniczanie godzin do 8 max
             return min(total_hours, 8)
 
-        results = df.groupby(['Campaign name', df['Date'].dt.date]).apply(calculate_hours).reset_index(name='Hours')
+        results = df.groupby(['Legal entity', 'Campaign name', df['Date'].dt.date]).apply(calculate_hours).reset_index(name='Hours')
 
         # Sortowanie wyników po dacie
         results = results.sort_values(by='Date')
@@ -64,7 +80,7 @@ def process_file(file_path):
             return  # Jeśli użytkownik anuluje wybór
 
         results.to_excel(output_file, index=False)
-        
+
         # Kolorowanie wierszy naprzemiennie
         wb = load_workbook(output_file)
         ws = wb.active
@@ -73,20 +89,40 @@ def process_file(file_path):
         fill_grey = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
         fill_red = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # Czerwony
 
-        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=3):
-            current_date = row[1].value
+        for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=4):
+            current_date = row[2].value
             fill = fill_grey if current_date.weekday() % 2 == 0 else PatternFill()
 
             # Kolorowanie wierszy na czerwono, jeśli godziny są >= 8
-            if row[2].value >= 8:
+            if row[3].value >= 8:
                 fill = fill_red
 
             for cell in row:
                 cell.fill = fill
 
         # Ustawienie formatu liczbowego z dwoma miejscami po przecinku dla kolumny "Hours"
-        for cell in ws['C']:
+        for cell in ws['D']:
             cell.number_format = numbers.FORMAT_NUMBER_00
+
+        # Dodanie filtrowania w nagłówkach kolumn
+        tab = Table(displayName="Table1", ref=f"A1:D{ws.max_row}")
+        style = TableStyleInfo(name="TableStyleMedium9", showFirstColumn=False,
+                               showLastColumn=False, showRowStripes=True, showColumnStripes=True)
+        tab.tableStyleInfo = style
+        ws.add_table(tab)
+
+        # Dostosowanie szerokości kolumn
+        for column in ws.columns:
+            max_length = 0
+            column = list(column)
+            for cell in column:
+                try:
+                    if len(str(cell.value)) > max_length:
+                        max_length = len(str(cell.value))
+                except:
+                    pass
+            adjusted_width = (max_length + 2)
+            ws.column_dimensions[column[0].column_letter].width = adjusted_width
 
         wb.save(output_file)
         print(f"Plik przetworzony i zapisany jako '{output_file}'.")
