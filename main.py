@@ -3,7 +3,7 @@ from tkinter import filedialog, messagebox
 import pandas as pd
 import numpy as np
 from openpyxl import load_workbook
-from openpyxl.styles import PatternFill
+from openpyxl.styles import PatternFill, numbers
 
 def load_file():
     file_path = filedialog.askopenfilename()  # Możesz wybrać dowolny plik dla testu
@@ -71,14 +71,22 @@ def process_file(file_path):
 
         # Definiowanie kolorów
         fill_grey = PatternFill(start_color="DDDDDD", end_color="DDDDDD", fill_type="solid")
+        fill_red = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # Czerwony
 
-        current_date = None
         for row in ws.iter_rows(min_row=2, max_row=ws.max_row, min_col=1, max_col=3):
-            if row[1].value != current_date:
-                current_date = row[1].value
-                fill = fill_grey if current_date.weekday() % 2 == 0 else PatternFill()
+            current_date = row[1].value
+            fill = fill_grey if current_date.weekday() % 2 == 0 else PatternFill()
+
+            # Kolorowanie wierszy na czerwono, jeśli godziny są >= 8
+            if row[2].value >= 8:
+                fill = fill_red
+
             for cell in row:
                 cell.fill = fill
+
+        # Ustawienie formatu liczbowego z dwoma miejscami po przecinku dla kolumny "Hours"
+        for cell in ws['C']:
+            cell.number_format = numbers.FORMAT_NUMBER_00
 
         wb.save(output_file)
         print(f"Plik przetworzony i zapisany jako '{output_file}'.")
