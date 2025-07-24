@@ -45,8 +45,9 @@ def process_file(file_path):
                 if not corresponding_actions.empty:
                     accept_reject_time = corresponding_actions['Date'].iloc[0]
                     time_diff = accept_reject_time - take_action['Date']
-                    # Oblicz czas w godzinach i zaokrąglij w górę do 0.25
+                    # Oblicz czas w godzinach i zawsze zaokrąglij w górę do najbliższej 0.25
                     hours = np.ceil(time_diff.total_seconds() / 3600 / 0.25) * 0.25
+                    hours = max(hours, 0.25)  # Minimum 0.25 godziny
                     print(f"Calculated hours between {take_action['Date']} and {accept_reject_time}: {hours}")
                     total_hours += hours
             # Ograniczanie godzin do 8 max
